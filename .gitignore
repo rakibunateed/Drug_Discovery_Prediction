@@ -1,0 +1,34 @@
+# ==========================================
+# Python & Environments
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# IDEs & Editors (PyCharm, VS Code, etc.)
+# ==========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Streamlit & Local Logs
+# ==========================================
+.streamlit/secrets.toml
+*.log
+
+# ==========================================
+# Optional: Large Trained Models & Data
+# (Uncomment if you don't want to upload large model files or dataset backups to GitHub)
+# ==========================================
+# models/*.pkl
+# outputs/
