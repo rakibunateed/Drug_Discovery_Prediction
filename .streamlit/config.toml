@@ -1,0 +1,13 @@
+# Put this file at:  <your project folder>/.streamlit/config.toml  (REPLACE the light one)
+# Then restart Streamlit.
+[theme]
+base = "dark"
+primaryColor = "#3bffa0"
+backgroundColor = "#0d0f14"
+secondaryBackgroundColor = "#171b22"
+textColor = "#f0f4f0"
+font = "sans serif"
+baseRadius = "large"
+
+[sidebar]
+backgroundColor = "#0a0c10"
