@@ -1,4 +1,4 @@
-Cluster,MolWt,LogP,TPSA,NumHDonors,NumHAcceptors,NumRotatableBonds,NumAromaticRings,RingCount,HeavyAtomCount,FractionCSP3,NumValenceElectrons,MolMR,Toxicity,Compound Count
-0,176.65,1.63,40.1,0.83,2.21,2.73,0.59,0.86,11.57,0.49,64.49,46.08,0.1,3739
-1,370.38,3.29,74.89,1.45,4.52,5.89,1.68,2.76,25.36,0.41,136.21,97.67,0.27,2023
-2,877.88,0.48,285.66,8.19,15.62,14.81,1.61,5.05,60.24,0.65,335.01,216.69,0.22,152
+Cluster,MolWt,LogP,TPSA,NumHDonors,NumHAcceptors,NumRotatableBonds,NumAromaticRings,RingCount,HeavyAtomCount,FractionCSP3,NumValenceElectrons,MolMR,NR-AR_toxic,NR-AR_not_measured,NR-AR-LBD_toxic,NR-AR-LBD_not_measured,NR-AhR_toxic,NR-AhR_not_measured,NR-Aromatase_toxic,NR-Aromatase_not_measured,NR-ER_toxic,NR-ER_not_measured,NR-ER-LBD_toxic,NR-ER-LBD_not_measured,NR-PPAR-gamma_toxic,NR-PPAR-gamma_not_measured,SR-ARE_toxic,SR-ARE_not_measured,SR-ATAD5_toxic,SR-ATAD5_not_measured,SR-HSE_toxic,SR-HSE_not_measured,SR-p53_toxic,SR-p53_not_measured,Toxicity,Compound Count
+0,332.79,3.77,56.98,1.18,3.45,4.43,1.62,2.61,22.47,0.37,119.63,88.75,0.15,0.02,0.15,0.29,0.28,0.23,0.11,0.62,0.3,0.4,0.19,0.2,0.09,0.41,0.36,0.45,0.15,0.14,0.17,0.36,0.22,0.31,0.6,1043
+1,213.65,1.88,47.54,0.93,2.7,3.48,0.8,1.21,14.28,0.49,78.75,55.98,0.01,0.02,0.0,0.02,0.05,0.07,0.02,0.08,0.06,0.07,0.01,0.01,0.01,0.02,0.06,0.16,0.0,0.0,0.01,0.1,0.01,0.01,0.06,4545
+2,690.4,1.16,212.69,5.53,11.9,12.07,1.62,5.41,47.16,0.59,260.42,171.25,0.06,0.03,0.03,0.08,0.02,0.09,0.04,0.12,0.11,0.16,0.03,0.04,0.01,0.15,0.05,0.67,0.01,0.1,0.01,0.58,0.08,0.05,0.13,326

@@ -109,11 +109,24 @@ def extract_features(smiles):
     }
 
 print("Extracting features (this may take a minute)...")
+# The other 11 Tox21 assay results are used as extra model inputs.
+# Each assay becomes 2 columns (the SAME names app.py builds in build_model_row):
+#   <assay>_toxic        = 1 if the assay result is Toxic
+#   <assay>_not_measured = 1 if the assay result is missing in the dataset
+#   (both 0 = Non-toxic)
+# SR-MMP itself is the TARGET, so it is never used as an input.
+ASSAY_COLS = [c for c in df.columns
+              if (c.startswith("NR-") or c.startswith("SR-")) and c != TARGET]
+print(f"Assay input columns ({len(ASSAY_COLS)}): {ASSAY_COLS}")
+
 features_list = []
 labels_list = []
 for _, row in df.iterrows():
     feats = extract_features(row["smiles"])
     if feats is not None:
+        for c in ASSAY_COLS:
+            feats[f"{c}_toxic"] = int(row[c] == 1)
+            feats[f"{c}_not_measured"] = int(pd.isna(row[c]))
         features_list.append(feats)
         labels_list.append(row[TARGET])
 

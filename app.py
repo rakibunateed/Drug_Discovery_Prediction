@@ -13,8 +13,9 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors, Lipinski, Draw
+from sklearn.model_selection import train_test_split
 
 
 st.set_page_config(page_title="Drug Discovery Prediction", page_icon="💊", layout="wide")
@@ -302,6 +303,12 @@ section[data-testid="stSidebar"] > div {
   overflow: hidden !important;
 }
 
+
+/* Predict form: line the field names up with the text inside their boxes */
+[class*="st-key-f_"] [data-testid="stWidgetLabel"] {
+  padding-left: 10px !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -318,11 +325,6 @@ def show_img(path: str):
 @st.cache_data(show_spinner=False)
 def load_raw_dataset() -> pd.DataFrame:
     return pd.read_csv("Dataset/tox21.csv")
-
-
-@st.cache_data(show_spinner=False)
-def load_custom_compounds_cached(mtime: float) -> dict:
-    return load_custom_compounds()
 
 
 # ---------------------------------------------------------------------
@@ -344,77 +346,40 @@ feature_names = art["feature_names"]
 MODEL_ICONS = {"Random Forest": "🌲", "SVM (RBF kernel)": "🧬", "Logistic Regression": "📈"}
 
 # ---------------------------------------------------------------------
-# Named compound library (English names -> SMILES, hidden from the user)
+# Prediction data: compounds come from the Tox21 dataset (Dataset/tox21.csv)
 # ---------------------------------------------------------------------
-DRUG_LIBRARY = {
-    "Aspirin": "CC(=O)OC1=CC=CC=C1C(=O)O",
-    "Caffeine": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
-    "Ibuprofen": "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",
-    "Paracetamol (Acetaminophen)": "CC(=O)NC1=CC=C(C=C1)O",
-    "Penicillin G": "CC1(C)SC2C(NC(=O)Cc3ccccc3)C(=O)N2C1C(=O)O",
-    "Amoxicillin": "CC1(C)S[C@@H]2[C@H](NC(=O)[C@H](N)c3ccc(O)cc3)C(=O)N2[C@H]1C(=O)O",
-    "Metformin": "CN(C)C(=N)NC(=N)N",
-    "Atorvastatin": "CC(C)c1c(C(=O)Nc2ccccc2)c(-c2ccccc2)c(-c2ccc(F)cc2)n1CCC(O)CC(O)CC(=O)O",
-    "Omeprazole": "COc1ccc2[nH]c(S(=O)Cc3ncc(C)c(OC)c3C)nc2c1",
-    "Diphenhydramine": "CN(C)CCOC(c1ccccc1)c1ccccc1",
-    "Loratadine": "CCOC(=O)N1CCC(=C2c3ccc(Cl)cc3CCc3cccnc32)CC1",
-    "Warfarin": "CC(=O)CC(c1ccccc1)c1c(O)c2ccccc2oc1=O",
-    "Diazepam": "CN1c2ccc(Cl)cc2C(c2ccccc2)=NCC1=O",
-    "Morphine": "CN1CC[C@]23c4c5ccc(O)c4O[C@H]2[C@@H](O)C=C[C@H]3[C@H]1C5",
-    "Nicotine": "CN1CCC[C@H]1c1cccnc1",
-    "Ethanol": "CCO",
-    "Benzene": "c1ccccc1",
-    "Glucose": "OCC1OC(O)C(O)C(O)C1O",
-    "Vitamin C (Ascorbic acid)": "OC[C@H](O)[C@H]1OC(=O)C(O)=C1O",
-    "Naproxen": "COc1ccc2cc(C(C)C(=O)O)ccc2c1",
-    "Sildenafil (Viagra)": "CCCC1=NN(C)C2=C1NC(=NC2=O)C1=CC(=CC=C1OCC)S(=O)(=O)N1CCN(C)CC1",
-    "Fluoxetine (Prozac)": "CNCCC(Oc1ccc(cc1)C(F)(F)F)c1ccccc1",
-    "Sertraline (Zoloft)": "CNC1CCC(c2ccc(Cl)c(Cl)c2)c2ccccc21",
-    "Lisinopril": "CCCC[C@H](N[C@@H](CCc1ccccc1)C(=O)N1CCC[C@H]1C(=O)O)C(=O)O",
-    "Simvastatin": "CCC(C)(C)C(=O)OC1CC(C)C=C2C=CC(C)C(CCC3CC(O)CC(=O)O3)C12",
-    "Losartan": "CCCCc1nc(Cl)c(CO)n1Cc1ccc(-c2ccccc2-c2nnn[nH]2)cc1",
-    "Albuterol (Salbutamol)": "CC(C)(C)NCC(O)c1ccc(O)c(CO)c1",
-    "Methotrexate": "CN(Cc1cnc2nc(N)nc(N)c2n1)c1ccc(C(=O)NC(CCC(=O)O)C(=O)O)cc1",
-    "Chloroquine": "CCN(CC)CCCC(C)Nc1ccnc2cc(Cl)ccc12",
-    "Thalidomide": "O=C1CCC(N2C(=O)c3ccccc3C2=O)C(=O)N1",
-}
-
-# ---------------------------------------------------------------------
-# Custom compounds saved by the user (persisted as a structured CSV table)
-# Columns: Compound Name, SMILES
-# ---------------------------------------------------------------------
-CUSTOM_COMPOUNDS_FILE = "Dataset/custom_compounds.csv"
+TARGET = "SR-MMP"
+TOX21_ASSAYS = ["NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase", "NR-ER", "NR-ER-LBD",
+                "NR-PPAR-gamma", "SR-ARE", "SR-ATAD5", "SR-HSE", "SR-MMP", "SR-p53"]
 
 
-def load_custom_compounds() -> dict:
-    """Read saved custom compounds from the CSV table, if it exists."""
-    if not os.path.exists(CUSTOM_COMPOUNDS_FILE):
-        return {}
-    df_custom = pd.read_csv(CUSTOM_COMPOUNDS_FILE)
-    df_custom = df_custom.dropna(subset=["Compound Name", "SMILES"])
-    return dict(zip(df_custom["Compound Name"].str.strip(), df_custom["SMILES"].str.strip()))
+@st.cache_data(show_spinner="Preparing dataset...")
+def load_prediction_dataset() -> pd.DataFrame:
+    """
+    Every compound in tox21.csv, plus the group it belongs to:
+      - "Training set" / "Test set": the SAME 80/20 stratified split (random_state=42)
+        that train_models.py used, so the app knows which compounds the models have
+        never seen.
+      - "No SR-MMP label": the lab result is missing, so it was never used for training.
+      - "Excluded (SMILES not readable)": RDKit could not parse the structure.
+    """
+    RDLogger.DisableLog("rdApp.*")
+    data = pd.read_csv("Dataset/tox21.csv").drop_duplicates().reset_index(drop=True)
+    data["split"] = "No SR-MMP label"
 
+    labelled = data.dropna(subset=[TARGET, "smiles"])
+    readable = [i for i, smi in labelled["smiles"].items() if Chem.MolFromSmiles(smi) is not None]
+    data.loc[labelled.index.difference(readable), "split"] = "Excluded (SMILES not readable)"
 
-def save_custom_compound(name: str, smiles: str):
-    """Append a new compound as a row in the CSV table, skipping duplicate names."""
-    os.makedirs(os.path.dirname(CUSTOM_COMPOUNDS_FILE), exist_ok=True)
-    existing = load_custom_compounds()
-    if name in existing or name in DRUG_LIBRARY:
-        return False  # name already used, don't overwrite
+    used = data.loc[readable]
+    y = used[TARGET].astype(int).values
+    idx_train, idx_test = train_test_split(np.arange(len(used)), test_size=0.2, random_state=42, stratify=y)
+    data.loc[used.index[idx_train], "split"] = "Training set"
+    data.loc[used.index[idx_test], "split"] = "Test set"
 
-    new_row = pd.DataFrame([{"Compound Name": name, "SMILES": smiles}])
-    if os.path.exists(CUSTOM_COMPOUNDS_FILE):
-        new_row.to_csv(CUSTOM_COMPOUNDS_FILE, mode="a", header=False, index=False)
-    else:
-        new_row.to_csv(CUSTOM_COMPOUNDS_FILE, mode="w", header=True, index=False)
-    return True
-
-
-def get_full_library() -> dict:
-    """Built-in drug library + any user-saved custom compounds."""
-    mtime = os.path.getmtime(CUSTOM_COMPOUNDS_FILE) if os.path.exists(CUSTOM_COMPOUNDS_FILE) else 0.0
-    return {**DRUG_LIBRARY, **load_custom_compounds_cached(mtime)}
-
+    short = data["smiles"].where(data["smiles"].str.len() <= 40, data["smiles"].str[:40] + "...")
+    data["label"] = data["mol_id"] + "  —  " + short
+    return data
 
 
 def featurize(smiles: str):
@@ -473,24 +438,6 @@ with st.sidebar:
     st.markdown("<div class='model-row'>⚠️ Mitochondrial Toxicity</div>", unsafe_allow_html=True)
     st.markdown("<div class='model-row'>💊 Lipinski's Rule of 5</div>", unsafe_allow_html=True)
     st.markdown("<div class='model-row'>🧬 Molecular Descriptors</div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("**🔎 Get Compounds Names & SMILES**")
-    st.markdown(
-        "<div class='model-row' style='display:flex; align-items:center; gap:8px;'>"
-        "<img src='https://www.google.com/s2/favicons?sz=32&domain=litfl.com' "
-        "style='width:18px; height:18px; border-radius:4px;'> "
-        "<a href='https://litfl.com/bscc/top-200-drugs-pharmacology/' target='_blank' "
-        "style='color:var(--accent) !important; text-decoration:none;'>Top 200 Drugs List</a></div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "<div class='model-row' style='display:flex; align-items:center; gap:8px;'>"
-        "<img src='https://www.google.com/s2/favicons?sz=32&domain=pubchem.ncbi.nlm.nih.gov' "
-        "style='width:18px; height:18px; border-radius:4px;'> "
-        "<a href='https://pubchem.ncbi.nlm.nih.gov/' target='_blank' "
-        "style='color:var(--accent) !important; text-decoration:none;'>PubChem — Find SMILES</a></div>",
-        unsafe_allow_html=True
-    )
 
 
 # =======================================================================
@@ -511,7 +458,7 @@ st.markdown(f"""
   <h3>📚 Project Information</h3>
   <p>This project applies a full data mining pipeline — data cleaning, feature extraction, exploratory data analysis, 
   and classification — to a real-world dataset (NIH/EPA Tox21). SMILES structures are converted into 12 molecular 
-  descriptors using RDKit, then three classification models (Random Forest, SVM, Logistic Regression) are trained 
+  descriptors using RDKit and combined with the dataset's other 11 assay results, then three classification models (Random Forest, SVM, Logistic Regression) are trained 
   to predict mitochondrial toxicity. The compound's drug-likeness is also assessed using Lipinski's Rule of Five. 
   The result: a data-driven screening report for any compound.</p>
   <h3 style="margin-top:18px;">⚙️ Machine Learning Models</h3>
@@ -545,7 +492,7 @@ with tab_dataset:
     st.markdown("""
     **Source:** Tox21 (NIH/EPA) — real-world chemical toxicity dataset from Kaggle.
     - **Target:** `SR-MMP` (Stress Response — Mitochondrial Membrane Potential disruption)
-    - **Input:** SMILES strings → 12 molecular descriptors extracted with RDKit
+    - **Input:** SMILES strings → 12 molecular descriptors extracted with RDKit, plus the 11 other assay columns
     - **Task:** Binary classification (Toxic = 1, Non-toxic = 0)
     """)
     try:
@@ -713,102 +660,125 @@ with tab_fpm:
         show_chart_sections(fpgrowth_sections)
 
 # ---------- Predict ----------
+LABEL_CHOICES = ["Toxic", "Non-toxic", "Not measured"]
+LABEL_TO_INT = {"Toxic": 1, "Non-toxic": 0}
+# Dataset columns used as model inputs: the 11 assay results other than the target (SR-MMP)
+ASSAY_INPUTS = [a for a in TOX21_ASSAYS if a != TARGET]
+
+
+def _label_text(v):
+    return "Toxic" if v == 1 else "Non-toxic" if v == 0 else "Not measured"
+
+
+def build_model_row(assay_texts: dict, descriptors: dict) -> dict:
+    """Turn the form values into the model's input columns (same names as train_models.py)."""
+    row = dict(descriptors)
+    for a in ASSAY_INPUTS:
+        row[f"{a}_toxic"] = int(assay_texts[a] == "Toxic")
+        row[f"{a}_not_measured"] = int(assay_texts[a] == "Not measured")
+    return row
+
+
+def _reset_fields():
+    for a in ASSAY_INPUTS:
+        st.session_state[f"f_{a}"] = "Not measured"
+    st.session_state["f_mol_id"] = ""
+    st.session_state["f_smiles"] = ""
+
+
+def _fill_from_dataset():
+    """Copy every column of the chosen tox21.csv row into the boxes."""
+    row_id = st.session_state.get("pred_row")
+    if row_id is None:
+        _reset_fields()
+        return
+    rec = load_prediction_dataset().loc[row_id]
+    for a in ASSAY_INPUTS:
+        st.session_state[f"f_{a}"] = _label_text(rec[a])
+    st.session_state["f_mol_id"] = rec["mol_id"]
+    st.session_state["f_smiles"] = rec["smiles"]
+
+
 @st.fragment
 def predict_section():
     st.markdown("## 🧠 Predict Compound Toxicity")
+    st.caption("Pick a compound from the dataset, choose a model, and see if it is toxic.")
 
-    input_mode = st.radio(
-        "Compound source:",
-        ["Choose from known compound library", "Enter a custom compound"],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
+    data = load_prediction_dataset()
+    if "f_smiles" not in st.session_state:
+        _reset_fields()
 
-    smiles_input = None
-    compound_label = None
+    # Every compound whose structure RDKit can read
+    view = data[data["split"] != "Excluded (SMILES not readable)"]
 
     col_l, col_mid, col_r = st.columns([1, 4, 1])
     with col_mid:
-        if input_mode == "Choose from known compound library":
-            full_library = get_full_library()
-            sel1, sel2 = st.columns(2)
-            with sel1:
-                compound_label = st.selectbox(
-                    "Compound name",
-                    list(full_library.keys()),
-                    label_visibility="collapsed",
-                    placeholder="Select Compound Name",
-                    index=None,
-                )
-            with sel2:
-                model_to_run = st.selectbox(
-                    "Model",
-                    list(models.keys()),
-                    label_visibility="collapsed",
-                    placeholder="Select Prediction Model",
-                    index=None,
-                )
-            smiles_input = full_library[compound_label] if compound_label else None
-        else:
-            st.caption("Give your compound a name, and its structure code (SMILES).")
-            c1, c2 = st.columns(2)
-            with c1:
-                compound_label = st.text_input(
-                    "Compound name",
-                    label_visibility="collapsed",
-                    placeholder="Compound Name",
-                )
-            with c2:
-                custom_smiles = st.text_input(
-                    "SMILES",
-                    label_visibility="collapsed",
-                    placeholder="SMILES Structure Code",
-                )
-            compound_label = compound_label.strip() if compound_label else None
-            smiles_input = custom_smiles.strip() if custom_smiles else None
-            model_to_run = st.selectbox(
-                "Model",
-                list(models.keys()),
-                label_visibility="collapsed",
-                placeholder="Select Prediction Model",
-                index=None,
-            )
+        st.selectbox(
+            "Load compound from dataset",
+            view.index.tolist(),
+            format_func=lambda i: data.at[i, "label"],
+            label_visibility="collapsed",
+            placeholder="Select Compound from dataset (mol_id)",
+            index=None,
+            key="pred_row",
+            on_change=_fill_from_dataset,
+        )
 
+    # --- Dataset columns used as inputs: the 11 other assay results (editable) ---
+    grid = st.columns(3)
+    for i, assay in enumerate(ASSAY_INPUTS):
+        with grid[i // 4]:
+            st.selectbox(assay, LABEL_CHOICES, key=f"f_{assay}")
+
+    # --- Remaining dataset columns (read-only): identifier and structure ---
+    id_col, smiles_col = st.columns([1, 3])
+    with id_col:
+        st.text_input("mol_id", key="f_mol_id", disabled=True)
+    with smiles_col:
+        st.text_input("smiles", key="f_smiles", disabled=True)
+
+    col_l, col_mid, col_r = st.columns([1, 4, 1])
+    with col_mid:
+        model_to_run = st.selectbox(
+            "Model",
+            list(models.keys()),
+            label_visibility="collapsed",
+            placeholder="Select Prediction Model",
+            index=None,
+            key="pred_model",
+        )
         run_clicked = st.button("Run Prediction", type="primary", use_container_width=True)
 
     if run_clicked:
+        smiles_input = st.session_state["f_smiles"].strip()
+        compound_label = st.session_state["f_mol_id"].strip()
+        assay_texts = {a: st.session_state[f"f_{a}"] for a in ASSAY_INPUTS}
         if not smiles_input:
-            st.warning("Please choose or enter a compound first.")
-        elif input_mode == "Enter a custom compound" and not compound_label:
-            st.warning("Please give your compound a name.")
+            st.warning("Please load a compound from the dataset first.")
         elif not model_to_run:
             st.warning("Please choose a model to run.")
         else:
             feats, mol = featurize(smiles_input)
             if feats is None:
-                st.error("Couldn't read that compound's structure code. Please check it and try again.")
+                st.error("RDKit could not read this compound's SMILES, so its properties could not be calculated.")
             else:
-                if input_mode == "Enter a custom compound":
-                    saved = save_custom_compound(compound_label, smiles_input)
-                    if saved:
-                        st.success(f"✅ **{compound_label}** was saved to your compound library — "
-                                   f"you'll find it under 'Choose from known compound library' next time.")
-                    else:
-                        st.info(f"ℹ️ **{compound_label}** is already in your compound library.")
+                # Were any assay boxes changed from the values stored in the dataset?
+                record = data[data["mol_id"] == compound_label]
+                stored = {a: _label_text(record.iloc[0][a]) for a in ASSAY_INPUTS} if len(record) else None
+                edited = stored is None or stored != assay_texts
 
                 st.markdown(f"### 🧪 Screening Report: **{compound_label}**")
                 c1, c2 = st.columns([1, 2])
                 with c1:
                     st.image(Draw.MolToImage(mol, size=(240, 240)), caption=compound_label)
                 with c2:
-                    X = pd.DataFrame([feats])[feature_names]
+                    X = pd.DataFrame([build_model_row(assay_texts, feats)])[feature_names]
                     X_scaled = scaler.transform(X)
                     model = models[model_to_run]
                     Xin = X.values if model_to_run == "Random Forest" else X_scaled
                     pred = model.predict(Xin)[0]
                     prob = model.predict_proba(Xin)[0, 1]
                     # Keep the displayed percentage consistent with the predicted label
-                    # (SVM's probability calibration can occasionally disagree with its own decision boundary)
                     if pred == 1 and prob < 0.5:
                         prob = 0.5
                     elif pred == 0 and prob >= 0.5:
@@ -825,6 +795,31 @@ def predict_section():
                         st.markdown(f"<span class='verdict-safe'>✅ SAFE — {prob:.0%} risk of mitochondrial toxicity</span>",
                                     unsafe_allow_html=True)
                         st.caption("✅ **Recommendation:** Compound passes initial toxicity screening.")
+
+                    # --- Compare with the laboratory result stored in the dataset ---
+                    if edited:
+                        st.caption("ℹ️ The assay values were edited, so this prediction is for modified values "
+                                   "and is not compared with the laboratory result.")
+                    else:
+                        lab_text = _label_text(record.iloc[0][TARGET]) if len(record) else "Not measured"
+                        if lab_text in LABEL_TO_INT:
+                            matched = LABEL_TO_INT[lab_text] == int(pred)
+                            st.markdown(f"**Laboratory result (SR-MMP):** {lab_text} &nbsp;→&nbsp; "
+                                        f"{'✅ prediction matches' if matched else '❌ prediction does not match'}")
+                        else:
+                            st.markdown("**Laboratory result (SR-MMP):** not measured")
+
+                    # --- Was this compound used to train the models? ---
+                    group = record["split"].iloc[0] if len(record) else None
+                    if group == "Training set":
+                        st.caption("ℹ️ This compound was part of the training data, so the model has already seen it.")
+                    elif group == "Test set":
+                        st.caption("ℹ️ This compound was held out from training, so the model has never seen it.")
+
+                # --- Molecular properties calculated from the SMILES ---
+                with st.expander("🧬 Molecular properties calculated from the SMILES (model inputs)"):
+                    st.dataframe(pd.DataFrame([{k: round(float(v), 2) for k, v in feats.items()}]),
+                                 hide_index=True, use_container_width=True)
 
                 # --- Drug-Likeness (Lipinski's Rule of 5) ---
                 st.markdown("---")
